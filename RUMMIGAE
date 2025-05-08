@@ -1,0 +1,235 @@
+--// COCO HUB - FULL FEATURED SCRIPT
+
+-- โหลด Kavo UI Library
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window = Library.CreateLib("COCO HUB", "DarkTheme")
+
+-- ========================================================================
+-- TAB: Player
+-- ========================================================================
+local TabPlayer = Window:NewTab("Player")
+local Section = TabPlayer:NewSection("Section Player!")
+
+local Plr = game.Players.LocalPlayer
+local drop
+local PlayerTP = nil
+local isMobile = game:GetService("UserInputService").TouchEnabled
+local camera = workspace.CurrentCamera
+
+-- ตัวแปรสถานะต่าง ๆ
+local noclip = false
+local highJump = false
+local hitboxEnabled = false
+local hitboxSize = Vector3.new(5,5,5)
+local speed = 16
+local aimbotEnabled = false
+local fov = 100
+local fovCircle = nil
+local objectHitboxEnabled = false
+local objectHitboxSize = Vector3.new(5,5,5)
+local selectedObjectClass = "Part"
+
+-- TweenService (ใช้ได้ถ้ามี animation)
+local TweenService = game:GetService("TweenService")
+
+-- ฟังก์ชันสร้าง Rainbow FOV Circle
+local function createFOVCircle()
+    if fovCircle then fovCircle:Remove() end
+    fovCircle = Drawing.new("Circle")
+    fovCircle.Color = Color3.fromRGB(255,0,0)
+    fovCircle.Thickness = 2
+    fovCircle.Transparency = 0.5
+    fovCircle.Radius = fov
+    fovCircle.Filled = false
+    fovCircle.Position = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
+    fovCircle.Visible = true
+
+    task.spawn(function()
+        while fovCircle do
+            task.wait()
+            local hue = (tick() % 5) / 5
+            fovCircle.Color = Color3.fromHSV(hue,1,1)
+            fovCircle.Position = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y/2)
+        end
+    end)
+end
+
+-- ฟังก์ชันรีเฟรชรายชื่อผู้เล่น
+local function refreshPlayers()
+    local list = {}
+    for _, v in pairs(game.Players:GetPlayers()) do
+        table.insert(list, v.Name)
+    end
+    if drop then drop:Refresh(list) end
+end
+refreshPlayers()
+
+-- Dropdown เลือกผู้เล่น
+drop = Section:NewDropdown("Select Player!", "Click To Select", {}, function(t)
+    PlayerTP = t
+end)
+-- โหลดค่าเริ่มต้นให้ dropdown
+refreshPlayers()
+
+-- ปุ่ม TP
+Section:NewButton("Click To TP", "", function()
+    local target = game.Players:FindFirstChild(PlayerTP)
+    if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+        game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame =
+            target.Character.HumanoidRootPart.CFrame
+    end
+end)
+
+-- ปุ่มรีเฟรช dropdown
+Section:NewButton("Refresh Dropdown", "Refreshes Dropdown", function()
+    refreshPlayers()
+end)
+
+-- Toggle ESP
+Section:NewToggle("ESP", "Toggle ESP", function(state)
+    _G.ESP = state
+    local localName = game.Players.LocalPlayer.Name
+    task.spawn(function()
+        while _G.ESP do
+            task.wait(0.1)
+            for _, v in pairs(game.Players:GetPlayers()) do
+                if v.Name~=localName and v.Character then
+                    if not v.Character:FindFirstChild("ESP") then
+                        local hl = Instance.new("Highlight", v.Character)
+                        hl.Name = "ESP"
+                        hl.FillColor = Color3.new(0,1,0.08)
+                        hl.OutlineColor = Color3.new(0.9,1,0)
+                        hl.FillTransparency = 0.5
+                        hl.Adornee = v.Character
+                    end
+                end
+            end
+        end
+        -- ลบ Highlight เมื่อปิด ESP
+        for _, v in pairs(game.Players:GetPlayers()) do
+            if v.Character and v.Character:FindFirstChild("ESP") then
+                v.Character.ESP:Destroy()
+            end
+        end
+    end)
+end)
+
+-- Toggle NoClip (Hold E)
+Section:NewToggle("NoClip (Hold E)", "Walk through walls", function(state)
+    noclip = state
+    local char = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
+    local uis = game:GetService("UserInputService")
+
+    task.spawn(function()
+        while noclip do
+            task.wait()
+            if not isMobile and uis:IsKeyDown(Enum.KeyCode.E) then
+                for _, p in pairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide = false end
+                end
+            else
+                for _, p in pairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") then p.CanCollide = true end
+                end
+            end
+        end
+        -- คืนค่า CanCollide เมื่อปิด NoClip
+        for _, p in pairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = true end
+        end
+    end)
+end)
+
+-- Toggle High Jump
+Section:NewToggle("High Jump", "Enable high jump", function(state)
+    highJump = state
+    local humanoid = game.Players.LocalPlayer.Character:WaitForChild("Humanoid")
+    humanoid.JumpPower = highJump and 100 or 50
+end)
+
+-- Slider Speed
+Section:NewSlider("Speed", "Adjust your speed", 100, 16, function(value)
+    game.Players.LocalPlayer.Character:WaitForChild("Humanoid").WalkSpeed = value
+end)
+
+-- Toggle Aimbot + Rainbow FOV
+Section:NewToggle("FOV Aimbot with Rainbow Circle", "Enable/disable", function(state)
+    aimbotEnabled = state
+    if state then
+        createFOVCircle()
+        task.spawn(function()
+            while aimbotEnabled do
+                task.wait(0.1)
+                local closest, dist = nil, math.huge
+                for _, p in pairs(game.Players:GetPlayers()) do
+                    if p~=game.Players.LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+                        local pos, on = camera:WorldToViewportPoint(p.Character.Head.Position)
+                        if on then
+                            local d = (Vector2.new(pos.X,pos.Y) - fovCircle.Position).Magnitude
+                            if d<fov and d<dist then
+                                closest, dist = p.Character.Head, d
+                            end
+                        end
+                    end
+                end
+                if closest then
+                    camera.CFrame = CFrame.new(camera.CFrame.Position, closest.Position)
+                end
+            end
+            if fovCircle then fovCircle:Remove(); fovCircle=nil end
+        end)
+    else
+        if fovCircle then fovCircle:Remove(); fovCircle=nil end
+    end
+end)
+
+-- Toggle Hitbox Expander (Players)
+Section:NewToggle("Hitbox Expander", "เปิด/ปิด", function(state)
+    hitboxEnabled = state
+    task.spawn(function()
+        while hitboxEnabled do
+            task.wait(0.1)
+            for _, p in pairs(game.Players:GetPlayers()) do
+                if p~=game.Players.LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local hrp = p.Character.HumanoidRootPart
+                    hrp.Size = hitboxSize
+                    hrp.Transparency = 0.5
+                    hrp.Material = Enum.Material.Neon
+                    hrp.Color = Color3.fromRGB(255,0,0)
+                    hrp.CanCollide = false
+                end
+            end
+        end
+        -- คืนค่าหลังปิด
+        for _, p in pairs(game.Players:GetPlayers()) do
+            if p~=game.Players.LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = p.Character.HumanoidRootPart
+                hrp.Size = Vector3.new(2,2,1)
+                hrp.Transparency = 0
+                hrp.Material = Enum.Material.Plastic
+                hrp.CanCollide = true
+            end
+        end
+    end)
+end)
+
+-- Slider ขนาด Hitbox (Players)
+Section:NewSlider("ขนาด Hitbox", "ปรับขนาดกล่องฮิตบอกซ์", 20, 2, function(value)
+    hitboxSize = Vector3.new(value,value,value)
+end)
+
+-- Toggle Hitbox Expander (Objects)
+Section:NewToggle("Hitbox ของสิ่งของ", "เปิด/ปิดการขยายฮิตบอกซ์ของสิ่งของ", function(state)
+    objectHitboxEnabled = state
+    task.spawn(function()
+        while objectHitboxEnabled do
+            task.wait(0.5)
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if selectedObjectClass and obj:IsA(selectedObjectClass) then
+                    pcall(function()
+                        obj.Size = objectHitboxSize
+                        obj.Transparency = 0.4
+                        obj.Material = Enum.Material.Neon
+                        obj.Color = Color3.fromRGB(255,150,0)
+                        obj.CanCollide = false
+                    end)
